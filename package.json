@@ -4,8 +4,8 @@
   "description": "Chrome extension to detect and translate manga panels with overlay translations",
   "type": "module",
   "scripts": {
-    "dev": "vite build --watch --mode development",
-    "build": "vite build --mode production",
+    "dev": "node scripts/build.mjs --watch --mode development",
+    "build": "node scripts/build.mjs --mode production",
     "preview": "vite preview",
     "lint": "eslint src/ --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
