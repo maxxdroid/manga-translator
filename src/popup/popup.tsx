@@ -10,6 +10,7 @@ import {
   SOURCE_LANGUAGES,
   TARGET_LANGUAGES,
 } from "../shared/constants";
+import { log } from "../shared/debug";
 
 export function Popup() {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -19,6 +20,7 @@ export function Popup() {
   const [ocrModelsAvailable, setOcrModelsAvailable] = useState(true);
   const [imageCount, setImageCount] = useState(0);
   const [isTranslating, setIsTranslating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Load settings on mount
   useEffect(() => {
@@ -39,77 +41,86 @@ export function Popup() {
       "manga-translate-settings": newSettings,
     });
 
-    // Notify content script
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: "DO_UPDATE_SETTINGS",
-          settings: newSettings,
-        } as Message);
-      }
-    });
+    // Notify content script via background
+    chrome.runtime.sendMessage({
+      type: "UPDATE_SETTINGS",
+      settings: newSettings,
+    } as Message);
   };
 
   const getStatus = async () => {
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(
-          tabs[0].id,
-          { type: "GET_STATUS" } as Message,
-          (response: any) => {
-            if (response) {
-              setTranslatorAvailable(response.translatorAvailable ?? false);
-              setOcrModelsAvailable(response.ocrModelsAvailable ?? true);
-              setImageCount(response.imageCount ?? 0);
-              setOverlaysVisible(response.overlaysVisible ?? true);
-            }
-          }
-        );
+    chrome.runtime.sendMessage(
+      { type: "GET_STATUS" } as Message,
+      (response: any) => {
+        if (chrome.runtime.lastError) {
+          setError(chrome.runtime.lastError.message ?? "Unknown error");
+          return;
+        }
+        if (response) {
+          setTranslatorAvailable(response.translatorAvailable ?? false);
+          setOcrModelsAvailable(response.ocrModelsAvailable ?? true);
+          setImageCount(response.imageCount ?? 0);
+          setOverlaysVisible(response.overlaysVisible ?? true);
+        }
       }
-    });
+    );
   };
 
   const handleTranslate = useCallback(async () => {
     setIsTranslating(true);
+    setError(null);
     setStatus("detecting-images");
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: "DO_TRANSLATE_PAGE",
-        } as Message);
-
-        // Listen for status updates
-        const listener = (msg: Message) => {
-          if (msg.type === "STATUS_UPDATE") {
-            setStatus(msg.status as ProcessingStatus);
-          } else if (
-            msg.type === "TRANSLATION_COMPLETE" ||
-            msg.type === "ERROR"
-          ) {
-            setIsTranslating(false);
-            setStatus("idle");
-            chrome.runtime.onMessage.removeListener(listener);
-            getStatus();
-          }
-        };
-        chrome.runtime.onMessage.addListener(listener);
+    chrome.runtime.sendMessage(
+      { type: "TRANSLATE_PAGE" } as Message,
+      (response: any) => {
+        if (chrome.runtime.lastError) {
+          setError(chrome.runtime.lastError.message ?? "Unknown error");
+          setIsTranslating(false);
+          setStatus("idle");
+          return;
+        }
+        if (response?.error) {
+          setError(response.error);
+          setIsTranslating(false);
+          setStatus("idle");
+        }
       }
-    });
+    );
+
+    // Listen for status updates
+    const listener = (msg: Message) => {
+      if (msg.type === "STATUS_UPDATE") {
+        log("popup", "status update:", msg.status);
+        if (msg.status === "complete") {
+          setIsTranslating(false);
+          setStatus("idle");
+          chrome.runtime.onMessage.removeListener(listener);
+          getStatus();
+        } else {
+          setStatus(msg.status as ProcessingStatus);
+        }
+      } else if (msg.type === "ERROR" || msg.type === "TRANSLATION_COMPLETE") {
+        if (msg.type === "ERROR") {
+          setError((msg as { message: string }).message);
+        }
+        setIsTranslating(false);
+        setStatus("idle");
+        chrome.runtime.onMessage.removeListener(listener);
+        getStatus();
+      }
+    };
+    chrome.runtime.onMessage.addListener(listener);
   }, []);
 
   const handleToggleOverlay = useCallback(async () => {
     const newVisible = !overlaysVisible;
     setOverlaysVisible(newVisible);
 
-    chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-      if (tabs[0]?.id) {
-        chrome.tabs.sendMessage(tabs[0].id, {
-          type: "DO_TOGGLE_OVERLAY",
-          visible: newVisible,
-        } as Message);
-      }
-    });
+    chrome.runtime.sendMessage({
+      type: "SET_OVERLAY",
+      visible: newVisible,
+    } as Message);
   }, [overlaysVisible]);
 
   const handleSourceLanguageChange = (lang: SourceLanguage) => {
@@ -181,6 +192,14 @@ export function Popup() {
           </p>
         )}
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="p-3 rounded-lg mb-4 bg-red-50 border border-red-200">
+          <p className="text-xs text-red-700 font-medium">Error</p>
+          <p className="text-xs text-red-600 mt-0.5 break-words">{error}</p>
+        </div>
+      )}
 
       {/* Action Buttons */}
       <div className="flex gap-2 mb-4">

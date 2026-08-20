@@ -6,10 +6,24 @@ let currentSourceLang: SourceLanguage | null = null;
 let currentTargetLang: TargetLanguage | null = null;
 let translatorAvailable = false;
 
+// Normalize short BCP-47 codes to canonical tags the Chrome Translator API accepts
+function normalizeLanguage(lang: string): string {
+  const aliases: Record<string, string> = {
+    zh: "zh-Hans",
+    "zh-CN": "zh-Hans",
+    "zh-SG": "zh-Hans",
+    "zh-TW": "zh-Hant",
+    "zh-HK": "zh-Hant",
+  };
+  return aliases[lang] || lang;
+}
+
 export async function initializeTranslator(
   sourceLang: SourceLanguage,
   targetLang: TargetLanguage
 ): Promise<boolean> {
+  const normalizedTarget = normalizeLanguage(targetLang);
+
   // Check if Translator API is available
   if (!("Translator" in self)) {
     console.warn("Chrome Translator API not available");
@@ -21,12 +35,12 @@ export async function initializeTranslator(
     // Check availability for this language pair
     const availability = await (self as any).Translator.availability({
       sourceLanguage: sourceLang,
-      targetLanguage: targetLang,
+      targetLanguage: normalizedTarget,
     });
 
     if (availability === "unavailable") {
       console.warn(
-        `Translation from ${sourceLang} to ${targetLang} not available`
+        `Translation from ${sourceLang} to ${normalizedTarget} not available`
       );
       translatorAvailable = false;
       return false;
@@ -35,11 +49,11 @@ export async function initializeTranslator(
     // Create translator instance
     translatorInstance = await (self as any).Translator.create({
       sourceLanguage: sourceLang,
-      targetLanguage: targetLang,
+      targetLanguage: normalizedTarget,
     });
 
     currentSourceLang = sourceLang;
-    currentTargetLang = targetLang;
+    currentTargetLang = normalizedTarget;
     translatorAvailable = true;
 
     return true;

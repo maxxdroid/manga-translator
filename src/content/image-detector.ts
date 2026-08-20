@@ -109,15 +109,25 @@ function isMangaImage(img: HTMLImageElement, settings: Settings): boolean {
     return false;
   }
 
-  // Skip tiny images (icons, thumbnails, avatars)
-  const minSize = settings.minImageSize;
-  const rect = img.getBoundingClientRect();
-
-  if (rect.width < minSize || rect.height < minSize) {
+  // Skip if image hasn't loaded yet (naturalWidth/Height = 0)
+  // but allow images with class "protect" which are loaded via JS
+  if (img.naturalWidth === 0 && img.naturalHeight === 0 && !img.classList.contains("protect")) {
     return false;
   }
 
-  // Skip images that are likely not manga
+  // Skip tiny images (icons, thumbnails, avatars).
+  // Fall back to natural dimensions for images not yet laid out
+  // (offscreen, display:none, lazy-loaded but decoded).
+  const minSize = settings.minImageSize;
+  const rect = img.getBoundingClientRect();
+  const effWidth = rect.width || img.naturalWidth || img.width || 0;
+  const effHeight = rect.height || img.naturalHeight || img.height || 0;
+
+  if (effWidth < minSize || effHeight < minSize) {
+    return false;
+  }
+
+  // Skip common non-manga image patterns
   const src = img.src.toLowerCase();
 
   // Skip common non-manga image patterns
@@ -147,14 +157,8 @@ function isMangaImage(img: HTMLImageElement, settings: Settings): boolean {
     return false;
   }
 
-  // Skip if image hasn't loaded yet (naturalWidth/Height = 0)
-  // but allow images with class "protect" which are loaded via JS
-  if (img.naturalWidth === 0 && img.naturalHeight === 0 && !img.classList.contains("protect")) {
-    return false;
-  }
-
   // Prefer tall/portrait images (manga-like aspect ratio)
-  const aspectRatio = rect.height / rect.width;
+  const aspectRatio = effWidth > 0 ? effHeight / effWidth : 1;
 
   // If very wide and short, probably not manga
   if (aspectRatio < 0.3) {
