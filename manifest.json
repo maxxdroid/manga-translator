@@ -3,10 +3,14 @@
   "name": "Manga Translate",
   "version": "0.1.0",
   "description": "Detect and translate manga panels with overlay translations. Supports Japanese and Korean.",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"
+  },
   "permissions": [
     "activeTab",
     "storage",
-    "scripting"
+    "scripting",
+    "offscreen"
   ],
   "host_permissions": [
     "<all_urls>"
