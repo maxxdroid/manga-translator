@@ -140,7 +140,13 @@ async function loadRecognitionModel(language: string): Promise<void> {
     throw new Error(`Dictionary fetch failed: ${dictResponse.status} (${dictPath})`);
   }
   const dictText = await dictResponse.text();
-  dictionary = ["blank", ...dictText.split("\n").filter((line) => line.trim())];
+  dictionary = [
+    "blank",
+    ...dictText
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0),
+  ];
 }
 
 async function processOcr(imageData: ImageData, language: string): Promise<OcrResult[]> {
@@ -390,7 +396,9 @@ async function recognizeText(imageData: ImageData): Promise<{ text: string; conf
   targetWidth = Math.min(targetWidth, targetHeight * maxRatio);
   targetWidth = Math.max(targetWidth, 10);
 
-  // Create normalized tensor in CHW format
+  // Create tensor in CHW format with RAW pixel values (0-255). The
+  // PP-OCRv5 "server" recognition models bake the normalization into the
+  // graph, so normalized input produces blank output.
   const tensorData = new Float32Array(3 * targetHeight * targetWidth);
 
   for (let y = 0; y < targetHeight; y++) {
@@ -399,15 +407,10 @@ async function recognizeText(imageData: ImageData): Promise<{ text: string; conf
       const srcY = Math.min(Math.floor((y / targetHeight) * height), height - 1);
       const srcIdx = (srcY * width + srcX) * 4;
 
-      // PaddleOCR rec normalization: (pixel / 255 - 0.5) / 0.5
-      const r = (data[srcIdx] / 255.0 - 0.5) / 0.5;
-      const g = (data[srcIdx + 1] / 255.0 - 0.5) / 0.5;
-      const b = (data[srcIdx + 2] / 255.0 - 0.5) / 0.5;
-
       const dstIdx = y * targetWidth + x;
-      tensorData[dstIdx] = r;
-      tensorData[targetHeight * targetWidth + dstIdx] = g;
-      tensorData[2 * targetHeight * targetWidth + dstIdx] = b;
+      tensorData[dstIdx] = data[srcIdx];
+      tensorData[targetHeight * targetWidth + dstIdx] = data[srcIdx + 1];
+      tensorData[2 * targetHeight * targetWidth + dstIdx] = data[srcIdx + 2];
     }
   }
 
