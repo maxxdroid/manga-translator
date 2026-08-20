@@ -1,11 +1,17 @@
 import { OcrResult, BoundingBox } from "../shared/types";
+import { OCR_CONFIG } from "../shared/constants";
 
 let ort: any = null;
 let detectionSession: any = null;
 let recognitionSession: any = null;
 let dictionary: string[] = [];
 let modelsAvailable = false;
+let initError: string | null = null;
 let currentLanguage = "ja";
+
+function resolveUrl(path: string): string {
+  return new URL(path, self.location.href).href;
+}
 
 // PaddleOCR preprocessing constants
 const DET_MEAN = [0.485, 0.456, 0.406];
@@ -23,17 +29,47 @@ self.onmessage = async (event) => {
   try {
     if (type === "INIT") {
       await initializeOcr(language);
-      self.postMessage({ type: "READY", modelsAvailable });
+      self.postMessage({
+        type: "READY",
+        modelsAvailable,
+        error: initError,
+      });
     } else if (type === "OCR_REQUEST") {
+      console.log(`[MT:worker] OCR_REQUEST received:`, {
+        id,
+        imageW: imageData?.width,
+        imageH: imageData?.height,
+        dataLen: imageData?.data?.length,
+        language,
+      });
       if (!modelsAvailable) {
-        self.postMessage({ type: "RESULT", id, results: [] });
+        self.postMessage({
+          type: "RESULT",
+          id,
+          results: [],
+          error: initError || "Models not available",
+        });
         return;
       }
       const results = await processOcr(imageData, language);
+      console.log(`[MT:worker] OCR_REQUEST done:`, {
+        id,
+        resultCount: results.length,
+        results: results.map((r) => ({
+          text: r.text,
+          conf: r.confidence,
+          bbox: r.bbox,
+        })),
+      });
       self.postMessage({ type: "RESULT", id, results });
     } else if (type === "DETECT_ONLY") {
       if (!modelsAvailable) {
-        self.postMessage({ type: "RESULT", id, results: [] });
+        self.postMessage({
+          type: "RESULT",
+          id,
+          results: [],
+          error: initError || "Models not available",
+        });
         return;
       }
       const boxes = await detectTextBoxes(imageData);
@@ -56,17 +92,21 @@ self.onmessage = async (event) => {
 
 async function initializeOcr(language?: string): Promise<void> {
   currentLanguage = language || "ja";
+  initError = null;
 
   try {
     ort = await import("onnxruntime-web");
     ort.env.wasm.numThreads = 1;
 
     // Try to load detection model
-    const detModelUrl = chrome.runtime.getURL("models/det/det.onnx");
+    const detModelUrl = resolveUrl(OCR_CONFIG.detectionModelPath);
     try {
       detectionSession = await ort.InferenceSession.create(detModelUrl);
     } catch (e) {
-      console.warn("Detection model not available:", e);
+      initError = `Detection model failed: ${
+        e instanceof Error ? e.message : String(e)
+      } (${detModelUrl})`;
+      console.warn("Detection model not available:", e, detModelUrl);
       return;
     }
 
@@ -74,6 +114,7 @@ async function initializeOcr(language?: string): Promise<void> {
     await loadRecognitionModel(currentLanguage);
     modelsAvailable = true;
   } catch (error) {
+    initError = error instanceof Error ? error.message : String(error);
     console.warn("OCR initialization failed:", error);
     modelsAvailable = false;
   }
@@ -84,28 +125,36 @@ async function loadRecognitionModel(language: string): Promise<void> {
   let dictPath: string;
 
   if (language === "ko") {
-    modelPath = chrome.runtime.getURL("models/ko/rec-korean.onnx");
-    dictPath = chrome.runtime.getURL("models/ko/ppocrv5_korean_dict.txt");
+    modelPath = resolveUrl(OCR_CONFIG.recognitionModels.ko);
+    dictPath = resolveUrl(OCR_CONFIG.dictionaryPaths.ko);
   } else {
-    modelPath = chrome.runtime.getURL("models/ch/rec-chinese-server.onnx");
-    dictPath = chrome.runtime.getURL("models/ch/ppocrv5_dict.txt");
+    modelPath = resolveUrl(OCR_CONFIG.recognitionModels.ja);
+    dictPath = resolveUrl(OCR_CONFIG.dictionaryPaths.ja);
   }
 
   recognitionSession = await ort.InferenceSession.create(modelPath);
 
   // Load dictionary
   const dictResponse = await fetch(dictPath);
+  if (!dictResponse.ok) {
+    throw new Error(`Dictionary fetch failed: ${dictResponse.status} (${dictPath})`);
+  }
   const dictText = await dictResponse.text();
   dictionary = ["blank", ...dictText.split("\n").filter((line) => line.trim())];
 }
 
 async function processOcr(imageData: ImageData, language: string): Promise<OcrResult[]> {
   if (!detectionSession || !recognitionSession) {
+    console.warn(`[MT:worker] processOcr: sessions not ready`, {
+      detection: !!detectionSession,
+      recognition: !!recognitionSession,
+    });
     return [];
   }
 
   // Step 1: Detect text regions
   const textBoxes = await detectTextBoxes(imageData);
+  console.log(`[MT:worker] detection produced ${textBoxes.length} boxes`);
   if (textBoxes.length === 0) return [];
 
   // Step 2: Recognize text in each region
@@ -115,6 +164,12 @@ async function processOcr(imageData: ImageData, language: string): Promise<OcrRe
     try {
       const croppedImage = cropImageRegion(imageData, bbox);
       const { text, confidence } = await recognizeText(croppedImage);
+
+      console.log(`[MT:worker] region recognize:`, {
+        bbox,
+        text: JSON.stringify(text),
+        confidence: confidence.toFixed(3),
+      });
 
       if (text.trim() && confidence > 0.3) {
         results.push({ bbox, text: text.trim(), confidence });
@@ -136,7 +191,14 @@ async function detectTextBoxes(imageData: ImageData): Promise<BoundingBox[]> {
   const outputName = detectionSession.outputNames[0];
   const output = results[outputName];
 
-  return parseDetectionOutput(output, originalWidth, originalHeight, scale);
+  console.log(`[MT:worker] detection output:`, {
+    dims: output.dims,
+    sample: Array.from(output.data.slice(0, 10)),
+    inputDims: tensor.dims,
+  });
+
+  const boxes = parseDetectionOutput(output, originalWidth, originalHeight, scale);
+  return boxes;
 }
 
 function preprocessForDetection(imageData: ImageData): {
