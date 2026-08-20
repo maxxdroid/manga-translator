@@ -75,11 +75,14 @@ export async function cacheTranslation(
 }
 
 function simpleHash(str: string): string {
-  let hash = 0;
+  // FNV-1a 64-bit (non-cryptographic, collision-resistant for cache keys)
+  let hash = 0xcbf29ce484222325n;
+  const prime = 0x100000001b3n;
+
   for (let i = 0; i < str.length; i++) {
-    const char = str.charCodeAt(i);
-    hash = (hash << 5) - hash + char;
-    hash = hash & hash;
+    hash ^= BigInt(str.charCodeAt(i));
+    hash = BigInt.asUintN(64, hash * prime);
   }
-  return Math.abs(hash).toString(36);
+
+  return hash.toString(16).padStart(16, "0");
 }

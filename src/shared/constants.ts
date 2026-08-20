@@ -19,18 +19,18 @@ export const TARGET_LANGUAGES: { code: string; name: string }[] = [
   { code: "fr", name: "French" },
   { code: "de", name: "German" },
   { code: "pt", name: "Portuguese" },
-  { code: "zh", name: "Chinese" },
+  { code: "zh-Hans", name: "Chinese (Simplified)" },
 ];
 
 export const OCR_CONFIG = {
-  detectionModelPath: "detection/PP-OCRv5_server_det.onnx",
+  detectionModelPath: "models/det/det.onnx",
   recognitionModels: {
-    ja: "chinese/PP-OCRv5_server_rec.onnx",
-    ko: "korean/korean_PP-OCRv5_mobile_rec.onnx",
+    ja: "models/ch/rec-chinese-server.onnx",
+    ko: "models/ko/rec-korean.onnx",
   },
   dictionaryPaths: {
-    ja: "chinese/ppocrv5_dict.txt",
-    ko: "korean/ppocrv5_korean_dict.txt",
+    ja: "models/ch/ppocrv5_dict.txt",
+    ko: "models/ko/ppocrv5_korean_dict.txt",
   },
   maxImageWidth: 960,
   minTextRegionSize: 10,

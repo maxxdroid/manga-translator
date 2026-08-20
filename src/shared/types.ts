@@ -55,18 +55,33 @@ export interface ImageTranslationData {
   overlayElements: HTMLDivElement[];
 }
 
+export interface OcrImageData {
+  data: number[];
+  width: number;
+  height: number;
+}
+
 // Message types for Chrome messaging
 export type Message =
   | { type: "TRANSLATE_PAGE" }
   | { type: "TRANSLATE_IMAGE"; imageUrl: string }
-  | { type: "TOGGLE_OVERLAY"; visible: boolean }
+  | { type: "TOGGLE_OVERLAY" }
+  | { type: "SET_OVERLAY"; visible: boolean }
   | { type: "UPDATE_SETTINGS"; settings: Settings }
   | { type: "GET_STATUS" }
+  | { type: "FETCH_IMAGE"; url: string }
   | { type: "DO_TRANSLATE_PAGE" }
   | { type: "DO_TRANSLATE_IMAGE"; imageUrl: string }
-  | { type: "DO_TOGGLE_OVERLAY"; visible: boolean }
+  | { type: "DO_TOGGLE_OVERLAY" }
+  | { type: "DO_SET_OVERLAY"; visible: boolean }
   | { type: "DO_UPDATE_SETTINGS"; settings: Settings }
   | { type: "OCR_COMPLETE"; imageId: string; results: OcrResult[] }
   | { type: "TRANSLATION_COMPLETE"; imageId: string; translations: Translation[] }
   | { type: "STATUS_UPDATE"; status: ProcessingStatus }
-  | { type: "ERROR"; message: string; code: string };
+  | { type: "ERROR"; message: string; code: string }
+  | { type: "OCR_INIT"; language: string }
+  | { type: "OCR_TERMINATE" }
+  | { type: "OCR_REQUEST"; imageData: OcrImageData; language: string }
+  | { type: "OFFSCREEN_OCR_INIT"; language: string }
+  | { type: "OFFSCREEN_OCR_TERMINATE" }
+  | { type: "OFFSCREEN_OCR_REQUEST"; imageData: OcrImageData; language: string };
