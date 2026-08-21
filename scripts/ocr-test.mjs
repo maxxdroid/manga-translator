@@ -7,7 +7,7 @@
 //
 // Requires: npm i --no-save pngjs
 import ort from "onnxruntime-web";
-import { PNG } from "pngjs";
+import { createCanvas, GlobalFonts, loadImage } from "@napi-rs/canvas";
 import { readFileSync } from "node:fs";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -29,9 +29,13 @@ const REC_HEIGHT = 48;
 const REC_MAX_RATIO = 32;
 const REC_CONF_THRESH = 0.3;
 
-const img = PNG.sync.read(readFileSync(IMAGE_PATH));
-console.log(`[test] image: ${img.width} x ${img.height}`);
-const data = new Uint8ClampedArray(img.data);
+const source = await loadImage(IMAGE_PATH);
+const canvas = createCanvas(source.width, source.height);
+canvas.getContext("2d").drawImage(source, 0, 0);
+const raw = canvas.getContext("2d").getImageData(0, 0, source.width, source.height);
+console.log(`[test] image: ${raw.width} x ${raw.height}`);
+const data = new Uint8ClampedArray(raw.data);
+const img = { width: raw.width, height: raw.height };
 
 // ---- detection preprocessing (mirrors ocr-worker.ts) ----
 let width = img.width;
@@ -120,7 +124,8 @@ console.log(`[test] detected ${boxes.length} text regions`);
 // ---- recognition ----
 const recSession = await ort.InferenceSession.create("public/models/ch/rec-chinese-server.onnx");
 const dictText = readFileSync("public/models/ch/ppocrv5_dict.txt", "utf-8");
-const dictionary = ["blank", ...dictText.split("\n").map((l) => l.trim()).filter((l) => l)];
+// ["blank", ...every raw line] — empty lines are significant (off-by-one otherwise)
+const dictionary = ["blank", ...dictText.split("\n").map((l) => l.replace(/\r$/, ""))];
 
 function cropRegion(bbox) {
   // Mirror worker unclip: expand ~25% around center before cropping
