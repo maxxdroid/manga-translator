@@ -2,6 +2,9 @@ import { Settings, OcrResult, Translation } from "./types";
 import { DEFAULT_SETTINGS, CACHE_CONFIG } from "./constants";
 
 const SETTINGS_KEY = "manga-translate-settings";
+// Bump when OCR/translation pipeline behavior changes so stale results from
+// older (buggy) runs are never served from cache.
+const CACHE_VERSION = "v2";
 
 export async function getSettings(): Promise<Settings> {
   const result = await chrome.storage.sync.get(SETTINGS_KEY);
@@ -16,7 +19,7 @@ export async function getCachedOcr(
   imageUrl: string,
   language: string
 ): Promise<OcrResult[] | null> {
-  const key = `ocr:${imageUrl}:${language}`;
+  const key = `ocr:${CACHE_VERSION}:${imageUrl}:${language}`;
   const result = await chrome.storage.local.get(key);
   const cached = result[key];
 
@@ -36,7 +39,7 @@ export async function cacheOcr(
   language: string,
   results: OcrResult[]
 ): Promise<void> {
-  const key = `ocr:${imageUrl}:${language}`;
+  const key = `ocr:${CACHE_VERSION}:${imageUrl}:${language}`;
   await chrome.storage.local.set({
     [key]: { data: results, timestamp: Date.now() },
   });
@@ -47,7 +50,7 @@ export async function getCachedTranslation(
   targetLanguage: string
 ): Promise<string | null> {
   const hash = simpleHash(sourceText);
-  const key = `translation:${hash}:${targetLanguage}`;
+  const key = `translation:${CACHE_VERSION}:${hash}:${targetLanguage}`;
   const result = await chrome.storage.local.get(key);
   const cached = result[key];
 
@@ -68,7 +71,7 @@ export async function cacheTranslation(
   translatedText: string
 ): Promise<void> {
   const hash = simpleHash(sourceText);
-  const key = `translation:${hash}:${targetLanguage}`;
+  const key = `translation:${CACHE_VERSION}:${hash}:${targetLanguage}`;
   await chrome.storage.local.set({
     [key]: { data: translatedText, timestamp: Date.now() },
   });
