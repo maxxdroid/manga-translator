@@ -196,23 +196,29 @@ async function processImage(image: DetectedImage): Promise<void> {
     sendStatusUpdate("translating");
     log("processImage", "translating", ocrResults.length, "text regions");
 
-    // Translate all detected text
+    // Translate all detected text. If the Translator API is unavailable,
+    // fall back to showing the original OCR text so overlays still render.
     const translations: Translation[] = [];
+    const translatorOk = isTranslatorAvailable();
 
     for (const result of ocrResults) {
-      const translatedText = await translateText(
-        result.text,
-        currentSettings!.targetLanguage
-      );
-
-      if (translatedText) {
-        translations.push({
-          originalText: result.text,
-          translatedText,
-          bbox: result.bbox,
-          confidence: result.confidence,
-        });
+      let translatedText: string | null = null;
+      if (translatorOk) {
+        translatedText = await translateText(
+          result.text,
+          currentSettings!.targetLanguage
+        );
       }
+      if (!translatedText) {
+        translatedText = result.text;
+      }
+
+      translations.push({
+        originalText: result.text,
+        translatedText,
+        bbox: result.bbox,
+        confidence: result.confidence,
+      });
     }
 
     log("processImage", "translated", translations.length, "text regions");
