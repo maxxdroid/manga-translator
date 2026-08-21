@@ -58,7 +58,10 @@ export async function initializeTranslator(
 
     return true;
   } catch (error) {
-    console.error("Failed to initialize translator:", error);
+    const err = error as DOMException;
+    console.error(
+      `Failed to initialize translator: ${err.name}: ${err.message}`
+    );
     translatorAvailable = false;
     return false;
   }
