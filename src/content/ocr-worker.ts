@@ -140,12 +140,12 @@ async function loadRecognitionModel(language: string): Promise<void> {
     throw new Error(`Dictionary fetch failed: ${dictResponse.status} (${dictPath})`);
   }
   const dictText = await dictResponse.text();
+  // Class layout mirrors TurboOCR/PaddleOCR: ["blank", ...every raw dict line].
+  // Empty lines are SIGNIFICANT (the file starts with one) — filtering them
+  // shifts every label by one and scrambles all decoded text.
   dictionary = [
     "blank",
-    ...dictText
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0),
+    ...dictText.split("\n").map((line) => line.replace(/\r$/, "")),
   ];
 }
 
