@@ -295,17 +295,27 @@ function parseDetectionOutput(
         const box = floodFill(data, visited, x, y, mapWidth, mapHeight);
 
         // Scale back to original image coordinates
+        const rawX = Math.max(0, Math.floor(box.minX * scaleX));
+        const rawY = Math.max(0, Math.floor(box.minY * scaleY));
+        const rawW = Math.min(
+          originalWidth - rawX,
+          Math.ceil((box.maxX - box.minX + 1) * scaleX)
+        );
+        const rawH = Math.min(
+          originalHeight - rawY,
+          Math.ceil((box.maxY - box.minY + 1) * scaleY)
+        );
+
+        // DB detection predicts a SHRUNKEN text region; the official
+        // post-processing unclips (expands) each box before cropping.
+        // Expand ~25% around the center as an axis-aligned approximation.
+        const expandX = Math.round(rawW * UNCLIP_RATIO * 0.125);
+        const expandY = Math.round(rawH * UNCLIP_RATIO * 0.125);
         const bbox: BoundingBox = {
-          x: Math.max(0, Math.floor(box.minX * scaleX)),
-          y: Math.max(0, Math.floor(box.minY * scaleY)),
-          width: Math.min(
-            originalWidth - Math.floor(box.minX * scaleX),
-            Math.ceil((box.maxX - box.minX + 1) * scaleX)
-          ),
-          height: Math.min(
-            originalHeight - Math.floor(box.minY * scaleY),
-            Math.ceil((box.maxY - box.minY + 1) * scaleY)
-          ),
+          x: Math.max(0, rawX - expandX),
+          y: Math.max(0, rawY - expandY),
+          width: Math.min(originalWidth - Math.max(0, rawX - expandX), rawW + 2 * expandX),
+          height: Math.min(originalHeight - Math.max(0, rawY - expandY), rawH + 2 * expandY),
         };
 
         // Filter out very small boxes
@@ -407,10 +417,16 @@ async function recognizeText(imageData: ImageData): Promise<{ text: string; conf
       const srcY = Math.min(Math.floor((y / targetHeight) * height), height - 1);
       const srcIdx = (srcY * width + srcX) * 4;
 
+      // PaddleOCR rec normalization: pixel/127.5 - 1  (== (x/255-0.5)/0.5).
+      // Verified against ground truth; raw 0-255 input decodes garbage.
+      const r = data[srcIdx] / 127.5 - 1;
+      const g = (data[srcIdx + 1]) / 127.5 - 1;
+      const b = (data[srcIdx + 2]) / 127.5 - 1;
+
       const dstIdx = y * targetWidth + x;
-      tensorData[dstIdx] = data[srcIdx];
-      tensorData[targetHeight * targetWidth + dstIdx] = data[srcIdx + 1];
-      tensorData[2 * targetHeight * targetWidth + dstIdx] = data[srcIdx + 2];
+      tensorData[dstIdx] = r;
+      tensorData[targetHeight * targetWidth + dstIdx] = g;
+      tensorData[2 * targetHeight * targetWidth + dstIdx] = b;
     }
   }
 
