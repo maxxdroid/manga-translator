@@ -123,10 +123,13 @@ const dictText = readFileSync("public/models/ch/ppocrv5_dict.txt", "utf-8");
 const dictionary = ["blank", ...dictText.split("\n").map((l) => l.trim()).filter((l) => l)];
 
 function cropRegion(bbox) {
-  const cropX = Math.max(0, bbox.x);
-  const cropY = Math.max(0, bbox.y);
-  const cropW = Math.min(bbox.width, img.width - cropX);
-  const cropH = Math.min(bbox.height, img.height - cropY);
+  // Mirror worker unclip: expand ~25% around center before cropping
+  const expandX = Math.round(bbox.width * 0.125);
+  const expandY = Math.round(bbox.height * 0.125);
+  const cropX = Math.max(0, bbox.x - expandX);
+  const cropY = Math.max(0, bbox.y - expandY);
+  const cropW = Math.min(bbox.width + 2 * expandX, img.width - cropX);
+  const cropH = Math.min(bbox.height + 2 * expandY, img.height - cropY);
   const cropped = new Uint8ClampedArray(cropW * cropH * 4);
   for (let row = 0; row < cropH; row++) {
     const srcRow = cropY + row;
@@ -156,10 +159,10 @@ async function recognize(crop) {
       const srcY = Math.min(Math.floor((y / REC_HEIGHT) * crop.height), crop.height - 1);
       const si = (srcY * crop.width + srcX) * 4;
       const di = y * targetWidth + x;
-      // RAW 0-255 input: PP-OCRv5 server models bake normalization into the graph
-      tData[di] = crop.data[si];
-      tData[REC_HEIGHT * targetWidth + di] = crop.data[si + 1];
-      tData[2 * REC_HEIGHT * targetWidth + di] = crop.data[si + 2];
+      // PaddleOCR rec normalization: pixel/127.5 - 1 (verified vs ground truth)
+      tData[di] = crop.data[si] / 127.5 - 1;
+      tData[REC_HEIGHT * targetWidth + di] = crop.data[si + 1] / 127.5 - 1;
+      tData[2 * REC_HEIGHT * targetWidth + di] = crop.data[si + 2] / 127.5 - 1;
     }
   }
   const input = recSession.inputNames[0];
